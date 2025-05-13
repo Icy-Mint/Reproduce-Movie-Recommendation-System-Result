@@ -15,10 +15,10 @@ def convert_categorical(df_X, _X):
     label_encoder = LabelEncoder()
     integer_encoded = label_encoder.fit_transform(values)
     # binary encode
-    onehot_encoder = OneHotEncoder(sparse=False)
+    onehot_encoder = OneHotEncoder(sparse_output=False)
     integer_encoded = integer_encoded.reshape(len(integer_encoded), 1)
     onehot_encoded = onehot_encoder.fit_transform(integer_encoded)
-    df_X = df_X.drop(_X, 1)
+    df_X = df_X.drop(_X, axis=1)
     for j in range(integer_encoded.max() + 1):
         df_X.insert(loc=j + 1, column=str(_X) + str(j + 1), value=onehot_encoded[:, j])
     return df_X
@@ -36,9 +36,11 @@ df_user = convert_categorical(df_user, 'gender')
 df_user['bin'] = pd.cut(df_user['age'], [0, 10, 20, 30, 40, 50, 100], labels=['1', '2', '3', '4', '5', '6'])
 df_user['age'] = df_user['bin']
 
-df_user = df_user.drop('bin', 1)
+if 'bin' in df_user.columns:
+    df_user = df_user.drop('bin', axis=1)
 df_user = convert_categorical(df_user, 'age')
-df_user = df_user.drop('zip', 1)
+if 'bin' in df_user.columns:
+    df_user = df_user.drop('bin', axis=1)
 
 for alpha_coef in alpha_coefs:
     pairs = []
@@ -74,6 +76,7 @@ for alpha_coef in alpha_coefs:
     df_user['AND'] = df_user['UID'].map(nd)
     df_user['AND'] /= float(df_user['AND'].max())
     X_train = df_user[df_user.columns[1:]]
-    X_train.fillna(0, inplace=True)
+    X_train = X_train.fillna(0)
+
 
     X_train.to_pickle("data100k/x_train_alpha("+str(alpha_coef)+").pkl")
