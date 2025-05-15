@@ -31,6 +31,7 @@ The framework of the proposed recommendation system. The method encodes the comb
 
 ## Scripts Added For Reproducing The Result(Including Instruction) 
 Run the scripts according to the sequence below to reproduce the result of this paper 
+
   **1. Feature Extraction**
   This step builds raw graph-based and side information features. This code is original from this repo: https://github.com/hadoov/GHRS/blob/main/Features100K.py
   python Features100K.py
