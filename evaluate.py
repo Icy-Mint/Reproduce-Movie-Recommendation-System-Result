@@ -4,58 +4,90 @@ evaluate.py – 5‑fold cross‑validation metrics for GHRS
 ------------------------------------------------------
 
 • Loads the per‑fold **predicted_ratings.pkl** files produced by
-  `rank_model.py --fold F` (F = 1…5).
+  `rank_model.py --fold F`  (F = 1…5).
 
 • Computes Root‑Mean‑Squared‑Error, Precision and Recall exactly as
-  described in §4 .3 of the paper:
-    – An item is **relevant** if the true rating ≥ 4.
-    – Precision / Recall use the same 4‑star threshold on predictions.
+  described in §4 .3 of the paper.
+
+Outputs
+-------
+<root>/evaluation_metrics.csv   (human‑readable summary)
+<root>/evaluation_metrics.pkl   (pickled python dict, optional)
 
 usage
 =====
-    python evaluate.py                    # default paths
-    python evaluate.py --root data100k    # if you changed folder names
+python evaluate.py                                  # default paths
+python evaluate.py --root data100k --out my.csv     # custom names
 """
-
-# ---------------------------------------------------------------- imports
+from __future__ import annotations
 import argparse, pickle, numpy as np, pandas as pd
 from math import sqrt
+from pathlib import Path
 from sklearn.metrics import mean_squared_error, precision_score, recall_score
 
-# ---------------------------------------------------------------- CLI
+# ----------------------------- CLI -------------------------------------
 P = argparse.ArgumentParser()
-P.add_argument("--root", default="data100k",          # folder with f1/ … f5/
-               help="root directory that contains f1/ … f5/ sub‑folders")
-P.add_argument("--ml",   default="datasets/ml-100k",  # MovieLens files
-               help="MovieLens‑100K dataset directory")
+P.add_argument("--root", default="data100k",
+               help="directory that contains f1/ … f5/ sub‑folders")
+P.add_argument("--ml",   default="datasets/ml-100k",
+               help="MovieLens‑100K directory with u*.test files")
+P.add_argument("--out",  default="evaluation_metrics.csv",
+               help="name of the CSV file to create inside --root")
+P.add_argument("--pickle", action="store_true",
+               help="also dump a pickled .pkl copy next to the CSV")
 args = P.parse_args()
 
-# ---------------------------------------------------------------- eval
-rmse, prec, rec = [], [], []
-for F in range(1, 6):
-    predU = pickle.load(open(f"{args.root}/f{F}/predicted_ratings.pkl", "rb"))
+ROOT = Path(args.root)
+ML   = Path(args.ml)
 
-    test  = pd.read_csv(f"{args.ml}/u{F}.test", sep="\t",
-                        names=["uid", "iid", "r", "ts"]).drop(columns="ts")
+# ----------------------------- evaluation ------------------------------
+rows = []           # collect per‑fold stats
+
+for F in range(1, 6):
+    pred_path = ROOT / f"f{F}" / "predicted_ratings.pkl"
+    if not pred_path.exists():
+        print(f"[warn] missing {pred_path}  →  skipping fold {F}")
+        continue
+
+    predU = pickle.load(open(pred_path, "rb"))
+
+    test = pd.read_csv(ML / f"u{F}.test", sep="\t",
+                       names=["uid", "iid", "r", "ts"]).drop(columns="ts")
     test["uid"] -= 1
     test["iid"] -= 1
 
-    y_true = test.r.to_numpy()
-    y_pred = predU[test.uid, test.iid]
+    y_true = test["r"].to_numpy()
+    y_pred = predU[test["uid"], test["iid"]]
 
-    rmse.append(sqrt(mean_squared_error(y_true, y_pred)))
+    rmse  = sqrt(mean_squared_error(y_true, y_pred))
+    rel_t = (y_true >= 4).astype(int)
+    rel_p = (y_pred >= 4).astype(int)
 
-    rel_true = (y_true >= 4).astype(int)          # relevant ↔ rating ≥ 4
-    rel_pred = (y_pred >= 4).astype(int)
+    precision = precision_score(rel_t, rel_p, zero_division=0)
+    recall    = recall_score   (rel_t, rel_p, zero_division=0)
 
-    prec.append(precision_score(rel_true, rel_pred, zero_division=0))
-    rec .append(recall_score   (rel_true, rel_pred, zero_division=0))
+    rows.append([F, rmse, precision, recall])
 
-    print(f"Fold {F}: RMSE={rmse[-1]:.4f}  "
-          f"Precision={prec[-1]:.3f}  Recall={rec[-1]:.3f}")
+    print(f"Fold {F}: RMSE={rmse:.4f}  Precision={precision:.3f}  "
+          f"Recall={recall:.3f}")
 
-# ---------------------------------------------------------------- report
+# ----------------------------- summary ---------------------------------
+df = pd.DataFrame(rows, columns=["fold", "rmse", "precision", "recall"])
+avg = df.mean(numeric_only=True)
+df = pd.concat([df,
+                pd.DataFrame([["AVG", avg.rmse, avg.precision, avg.recall]],
+                             columns=df.columns)],
+               ignore_index=True)
+
+csv_path = ROOT / args.out
+df.to_csv(csv_path, index=False, float_format="%.5f")
 print("\n==== 5‑Fold Averages ====")
-print(f"RMSE : {np.mean(rmse):.4f} ± {np.std(rmse):.4f}")
-print(f"Precision : {np.mean(prec):.3f}")
-print(f"Recall    : {np.mean(rec):.3f}")
+print(f"RMSE : {avg.rmse:.4f} ± {df['rmse'].std():.4f}")
+print(f"Precision : {avg.precision:.3f}")
+print(f"Recall    : {avg.recall:.3f}")
+print(f"✓ metrics saved → {csv_path}")
+
+if args.pickle:
+    pkl_path = csv_path.with_suffix(".pkl")
+    pickle.dump(df.to_dict(orient="list"), open(pkl_path, "wb"))
+    print(f"✓ pickle  saved → {pkl_path}")
