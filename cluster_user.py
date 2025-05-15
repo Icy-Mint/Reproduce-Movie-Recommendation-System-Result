@@ -1,62 +1,82 @@
-import pickle
-import numpy as np
+#!/usr/bin/env python
+"""
+cluster_user.py – builds the user→cluster map used in GHRS
+Includes Elbow and Silhouette analysis + PCA visualization of clusters.
+"""
+
+import argparse, pickle, numpy as np, pathlib
 import matplotlib.pyplot as plt
 from sklearn.cluster import KMeans
+from sklearn.decomposition import PCA
 from sklearn.metrics import silhouette_score
 
-# Load encoded user features
-with open('data100k/encoded_features.pkl', 'rb') as f:
-    X_encoded = pickle.load(f)
+# ---------------- CLI ----------------
+P = argparse.ArgumentParser()
+P.add_argument("--enc", default="data100k/encoded_features.pkl")
+P.add_argument("--k",   type=int, default=8, help="number of clusters (paper: 8)")
+P.add_argument("--out", default="data100k/user_clusters.pkl")
+P.add_argument("--fig_dir", default="Figs")
+args = P.parse_args()
 
-# Ensure NumPy array of float32
-X = np.array(X_encoded, dtype=np.float32)
+# ---------------- Load Features ----------------
+X = pickle.load(open(args.enc, "rb"))  # shape (943, 4)
+pathlib.Path(args.fig_dir).mkdir(parents=True, exist_ok=True)
 
-# K values to test
-K_RANGE = range(2, 15)
+# ---------------- Elbow Method ----------------
 inertias = []
-silhouettes = []
+k_range = range(2, 21)
+for k in k_range:
+    km = KMeans(n_clusters=k, n_init="auto", random_state=42)
+    km.fit(X)
+    inertias.append(km.inertia_)
 
-print(" Evaluating KMeans clustering for k =", list(K_RANGE))
+plt.figure()
+plt.plot(k_range, inertias, marker="o")
+plt.xlabel("Number of clusters (k)")
+plt.ylabel("Inertia")
+plt.title("Elbow Method for Optimal k")
+plt.grid(True)
+plt.savefig(f"{args.fig_dir}/elbow_curve.png")
+plt.close()
+print(f"✓ elbow_curve.png saved → {args.fig_dir}/elbow_curve.png")
 
-for k in K_RANGE:
-    kmeans = KMeans(n_clusters=k, random_state=42)
-    labels = kmeans.fit_predict(X)
-    inertias.append(kmeans.inertia_)
-    try:
-        sil_score = silhouette_score(X, labels)
-    except ValueError:
-        sil_score = float('nan')
-    silhouettes.append(sil_score)
+# ---------------- Silhouette Scores ----------------
+sil_scores = []
+for k in k_range:
+    km = KMeans(n_clusters=k, n_init="auto", random_state=42)
+    labels = km.fit_predict(X)
+    score = silhouette_score(X, labels)
+    sil_scores.append(score)
 
-# Plot elbow and silhouette
-plt.figure(figsize=(12, 5))
+plt.figure()
+plt.plot(k_range, sil_scores, marker="o", color="darkorange")
+plt.xlabel("Number of clusters (k)")
+plt.ylabel("Silhouette Score")
+plt.title("Silhouette Analysis")
+plt.grid(True)
+plt.savefig(f"{args.fig_dir}/silhouette_scores.png")
+plt.close()
+print(f"✓ silhouette_scores.png saved → {args.fig_dir}/silhouette_scores.png")
 
-plt.subplot(1, 2, 1)
-plt.plot(K_RANGE, inertias, 'bo-')
-plt.title("Elbow Method")
-plt.xlabel("k")
-plt.ylabel("Inertia (Distortion)")
+# ---------------- Final KMeans Clustering ----------------
+kmeans = KMeans(n_clusters=args.k, n_init="auto", random_state=42)
+labels = kmeans.fit_predict(X).astype(np.int16)
+pickle.dump(labels, open(args.out, "wb"))
+print(f"✓ user_clusters.pkl saved — k={args.k} → {args.out}")
 
-plt.subplot(1, 2, 2)
-plt.plot(K_RANGE, silhouettes, 'go-')
-plt.title("Silhouette Score")
-plt.xlabel("k")
-plt.ylabel("Silhouette")
+# ---------------- PCA Cluster Visualization ----------------
+pca = PCA(n_components=2)
+X_2D = pca.fit_transform(X)
 
+plt.figure(figsize=(7, 5))
+for c in range(args.k):
+    plt.scatter(*X_2D[labels == c].T, label=f"Cluster {c}", s=20)
+plt.title(f"PCA of Encoded Features (k={args.k})")
+plt.xlabel("PCA 1")
+plt.ylabel("PCA 2")
+plt.legend()
+plt.grid(True)
 plt.tight_layout()
-plt.savefig("data100k/kmeans_diagnostics.png")
-plt.show()
-
-#  Match the paper setting: k = 8
-best_k = 8
-print(f"\n Using best_k = {best_k} (from paper setting)")
-
-# Final clustering
-kmeans = KMeans(n_clusters=best_k, random_state=42)
-user_clusters = kmeans.fit_predict(X)
-
-# Save user-cluster mapping
-with open('data100k/user_clusters.pkl', 'wb') as f:
-    pickle.dump(user_clusters, f)
-
-print(f" Saved {best_k} user clusters to data100k/user_clusters.pkl")
+plt.savefig(f"{args.fig_dir}/clusters_pca_k{args.k}.png")
+plt.close()
+print(f"✓ cluster PCA plot saved → {args.fig_dir}/clusters_pca_k{args.k}.png")

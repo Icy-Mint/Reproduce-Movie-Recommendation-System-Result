@@ -1,52 +1,100 @@
-import pickle
-import pandas as pd
-import numpy as np
-from collections import defaultdict
+#!/usr/bin/env python
+"""
+rank_model.py  –  GHRS preference‑based ranking
+Implements Algorithm 1 (steps 10‑19) on the FULL MovieLens‑100K set.
 
-# Load user-cluster mapping
-with open('data100k/user_clusters.pkl', 'rb') as f:
-    user_clusters = pickle.load(f)
+Requires
+--------
+encoded_features.pkl   (from autoencoder.py)
+user_clusters.pkl      (from cluster_user.py – “whole‑set” mode)
 
-# Load MovieLens 100K ratings
-ratings = pd.read_csv('datasets/ml-100k/u.data', sep='\t', names=['user_id', 'item_id', 'rating', 'timestamp'])
+Produces
+--------
+data100k/predicted_ratings.pkl   (shape 943 × 1682, float32)
 
-# Drop timestamp and adjust indexing (MovieLens IDs are 1-based)
-ratings.drop(columns=['timestamp'], inplace=True)
-ratings['user_id'] -= 1
-ratings['item_id'] -= 1
+Typical call
+------------
+python rank_model.py --alpha 0.01 --th 0.8
+"""
+# ----------------------------------------------------------------------
+import os, random, argparse, pickle, numpy as np, pandas as pd, tensorflow as tf
+from sklearn.metrics.pairwise import cosine_similarity
+from tqdm import tqdm
 
-# Attach cluster ID to each rating row
-ratings['cluster'] = ratings['user_id'].map(lambda uid: user_clusters[uid])
+# reproducibility (same seeds the paper used)
+os.environ["PYTHONHASHSEED"] = "0"
+random.seed(42);  np.random.seed(42);  tf.random.set_seed(42)
 
-# Step 1: Compute cluster-wise item rating averages
-cluster_item_avg = ratings.groupby(['cluster', 'item_id'])['rating'].mean().unstack(fill_value=np.nan)
+# ------------------------ CLI -----------------------------------------
+cli = argparse.ArgumentParser()
+cli.add_argument("--alpha", type=float, default=0.01,
+                 help="alpha threshold (paper optimum 0.01)")
+cli.add_argument("--th",    type=float, default=0.80,
+                 help="item‑similarity threshold (paper used 0.80)")
+cli.add_argument("--root",  default="data100k",
+                 help="folder with *_features.pkl & *_clusters.pkl")
+cli.add_argument("--ml",    default="datasets/ml-100k",
+                 help="MovieLens‑100K directory (contains u.data)")
+args = cli.parse_args()
 
-# Step 2: Compute overall average rating per cluster
-cluster_avg = ratings.groupby('cluster')['rating'].mean()
+ROOT, ALPHA, TH = args.root, args.alpha, args.th
 
-# Step 3: Predict ratings for all (user, item) pairs
-num_users = ratings['user_id'].nunique()
-num_items = ratings['item_id'].nunique()
-pred_matrix = np.zeros((num_users, num_items))
+# ------------------------ load material -------------------------------
+clusters = np.asarray(pickle.load(open(f"{ROOT}/user_clusters.pkl", "rb")))
+K = clusters.max() + 1                           # number of clusters
 
-print("Generating predicted ratings...")
+ratings = pd.read_csv(f"{args.ml}/u.data", sep='\t',
+                      names=["uid", "iid", "r", "ts"]).drop(columns="ts")
+ratings["uid"] -= 1;  ratings["iid"] -= 1
+ratings["c"]    = clusters[ratings.uid]          # assign cluster to each row
 
-for user_id in range(num_users):
-    cluster = user_clusters[user_id]
-    for item_id in range(num_items):
-        if item_id in cluster_item_avg.columns:
-            value = cluster_item_avg.loc[cluster, item_id]
-            if not np.isnan(value):
-                pred_matrix[user_id][item_id] = value
-            else:
-                # Item unseen in cluster — fallback to cluster-wide avg
-                pred_matrix[user_id][item_id] = cluster_avg[cluster]
-        else:
-            # Item completely unseen — fallback
-            pred_matrix[user_id][item_id] = cluster_avg[cluster]
+U = ratings.uid.max() + 1                        # 943 users
+I = ratings.iid.max() + 1                        # 1682 items
+print(f"users={U}  items={I}  clusters={K}")
 
-# Save predicted rating matrix
-with open('data100k/predicted_ratings.pkl', 'wb') as f:
-    pickle.dump(pred_matrix, f)
+# ---------------- C × I mean matrix  (Alg. 1 step 11) -----------------
+CI = (ratings
+      .groupby(["c", "iid"])["r"].mean()
+      .unstack(fill_value=np.nan)
+      .reindex(index=range(K), columns=range(I)))
+Cmean = np.nanmean(CI.to_numpy(), 1, keepdims=True)   # step 17 fallback
 
-print("Rating prediction complete — saved to data100k/predicted_ratings.pkl")
+# ---------------- cluster‑local item similarities ---------------------
+print("▸ computing cluster‑local item similarities")
+simM = []
+global_mean = np.nanmean(ratings.r)                   # ≈ 3.53  (no NaN)
+
+for c in tqdm(range(K)):
+    sub  = ratings[ratings.c == c]
+    mat  = np.full((I, U), np.nan, dtype=np.float32)  # item × user
+    mat[sub.iid, sub.uid] = sub.r
+
+    means = np.nanmean(mat, 1, keepdims=True)         # I × 1
+    # rows with *all* NaN get means==NaN – fix by global mean -------------
+    means[np.isnan(means)] = global_mean
+    filled = np.where(np.isnan(mat), means, mat)      # finite matrix
+
+    simM.append(cosine_similarity(filled))            # I × I per cluster
+
+# ---------------- fill missing cells (Alg. 1 13‑17) -------------------
+predC = CI.to_numpy()                                 # will be modified
+print("▸ filling missing cluster‑item cells")
+for c in tqdm(range(K)):
+    row   = predC[c]
+    sim   = simM[c]
+    holes = np.isnan(row)
+    if not holes.any():                               # row already full
+        continue
+    for i in np.where(holes)[0]:
+        neigh_mask = sim[i] >= TH;  neigh_mask[i] = False
+        vals   = row[neigh_mask]
+        wts    = sim[i, neigh_mask]
+        good   = ~np.isnan(vals)
+        predC[c, i] = (np.average(vals[good], weights=wts[good])
+                       if good.any() else Cmean[c, 0])
+
+# ---------------- user‑level matrix (Alg. 1 step 19) ------------------
+predU = predC[clusters].astype(np.float32)             # 943 × 1682
+out_file = f"{ROOT}/predicted_ratings.pkl"
+pickle.dump(predU, open(out_file, "wb"))
+print("✓ predicted_ratings.pkl saved →", out_file)

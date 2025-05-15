@@ -1,45 +1,72 @@
-import pickle
-import numpy as np
-import pandas as pd
-from tensorflow.keras.models import Model
-from tensorflow.keras.layers import Input, Dense
+#!/usr/bin/env python
+"""autoencoder.py  – GHRS 5‑layer AE on the full MovieLens‑100K feature set with loss plot."""
+
+import os, random, numpy as np, tensorflow as tf, pickle, pandas as pd
+from tensorflow.keras import Model, Input
+from tensorflow.keras.layers import Dense
 from tensorflow.keras.regularizers import l1_l2
 from tensorflow.keras.optimizers import Adam
+import matplotlib.pyplot as plt
+import pathlib
 
-# Load combined features
-with open('data100k/x_train_alpha(0.01).pkl', 'rb') as f:
-    X = pickle.load(f)
+# reproducibility (paper §4.5)
+os.environ["PYTHONHASHSEED"] = "0"
+random.seed(42);  np.random.seed(42);  tf.random.set_seed(42)
 
-# If X is a DataFrame, drop non-numeric columns
-if isinstance(X, pd.DataFrame):
-    X = X.select_dtypes(include=[np.number])
-    X = X.to_numpy(dtype=np.float32)
-elif isinstance(X, list):
-    X = np.array(X, dtype=np.float32)
+# ---------------- Parameters ----------------
+ALPHA_FILE = "data100k/x_train_alpha(0.01).pkl"   # optimum α = 0.01
+ENC_OUT    = "data100k/encoded_features.pkl"
+LOSS_OUT   = "data100k/loss.pkl"
+FIG_OUT    = "Figs/loss_curve.png"
 
-# Autoencoder configuration
-input_dim = X.shape[1]
-encoding_dim = 4  # latent dimension (can be tuned)
+# Ensure output folders exist
+pathlib.Path("data100k").mkdir(parents=True, exist_ok=True)
+pathlib.Path("Figs").mkdir(parents=True, exist_ok=True)
 
-input_layer = Input(shape=(input_dim,))
-hidden1 = Dense(64, activation='relu', kernel_regularizer=l1_l2(0.001, 0.001))(input_layer)
-hidden2 = Dense(32, activation='relu', kernel_regularizer=l1_l2(0.001, 0.001))(hidden1)
-encoded = Dense(encoding_dim, activation='relu')(hidden2)
-hidden3 = Dense(32, activation='relu')(encoded)
-hidden4 = Dense(64, activation='relu')(hidden3)
-decoded = Dense(input_dim, activation='sigmoid')(hidden4)
+# ---------------- Load Data ----------------
+X = pd.read_pickle(ALPHA_FILE).astype(np.float32).to_numpy()
 
-autoencoder = Model(input_layer, decoded)
-encoder = Model(input_layer, encoded)
+# ---------------- Define Autoencoder ----------------
+inp = Input((X.shape[1],))
+h1  = Dense(64, activation="relu", kernel_regularizer=l1_l2(1e-3))(inp)
+h2  = Dense(32, activation="relu", kernel_regularizer=l1_l2(1e-3))(h1)
+code= Dense(4 , activation="relu")(h2)               # 4‑dim bottleneck
+h3  = Dense(32, activation="relu")(code)
+h4  = Dense(64, activation="relu")(h3)
+out = Dense(X.shape[1], activation="sigmoid")(h4)
 
-autoencoder.compile(optimizer=Adam(learning_rate=0.001), loss='mse')
+auto = Model(inp, out)
+auto.compile(Adam(1e-3), loss="mse")
 
-# Train autoencoder
-autoencoder.fit(X, X, epochs=100, batch_size=64, shuffle=True, validation_split=0.2)
+# ---------------- Train ----------------
+history = auto.fit(
+    X, X,
+    epochs=100,
+    batch_size=64,
+    shuffle=True,
+    validation_split=.2,
+    verbose=2
+).history
 
-# Encode features
-X_encoded = encoder.predict(X)
+# ---------------- Save Encoded Features ----------------
+encoded = Model(inp, code).predict(X)
+pickle.dump(encoded.astype(np.float32), open(ENC_OUT, "wb"))
+print("✓ encoded_features.pkl saved →", ENC_OUT)
 
-# Save encoded features
-with open('data100k/encoded_features.pkl', 'wb') as f:
-    pickle.dump(X_encoded, f)
+# ---------------- Save Training History ----------------
+pickle.dump(history, open(LOSS_OUT, "wb"))
+print("✓ loss history saved →", LOSS_OUT)
+
+# ---------------- Plot Loss Curve ----------------
+plt.figure(figsize=(8, 5))
+plt.plot(history["loss"], label="Train Loss")
+plt.plot(history["val_loss"], label="Validation Loss")
+plt.title("Autoencoder Training Loss")
+plt.xlabel("Epoch")
+plt.ylabel("MSE Loss")
+plt.legend()
+plt.grid(True)
+plt.tight_layout()
+plt.savefig(FIG_OUT)
+plt.close()
+print("✓ loss curve saved →", FIG_OUT)
