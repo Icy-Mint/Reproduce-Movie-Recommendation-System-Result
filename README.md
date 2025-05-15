@@ -37,7 +37,9 @@ Run the scripts according to the sequence below to reproduce the result of this 
   
   python Features100K.py
   
-  Output: x_train_alpha(<alpha>).pkl files in data100k/ (e.g., x_train_alpha(0.01).pkl)
+  Output: 
+  
+    x_train_alpha(<alpha>).pkl files in data100k/ (e.g., x_train_alpha(0.01).pkl)
 
   **2. Dimensionality Reduction with Autoencoder**
   This encodes high-dimensional features into low-dimensional vectors using an autoencoder.
@@ -46,7 +48,9 @@ Run the scripts according to the sequence below to reproduce the result of this 
   
   Input: x_train_alpha(0.01).pkl (modify the file path inside autoencoder.py if needed)
   
-  Output: encoded_features.pkl in data100k/
+  Output: 
+    
+    encoded_features.pkl in data100k/
 
   **3. User Clustering (KMeans)**
   This clusters the encoded features to group similar users.
@@ -64,14 +68,18 @@ Run the scripts according to the sequence below to reproduce the result of this 
   
   python rank_model.py
   
-  Output: predicted_ratings.pkl
+  Output: 
+  
+    predicted_ratings.pkl
 
   **5. Evaluation (RMSE Calculation)**
   This evaluates the predicted ratings against ground truth test set.
   
   python evaluate.py
   
-  Output: RMSE on test set: ... in console
+  Output: 
+    
+    RMSE on test set: ... in console
 
 ## Data
 
