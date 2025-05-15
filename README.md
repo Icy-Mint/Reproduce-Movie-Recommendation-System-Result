@@ -33,31 +33,44 @@ The framework of the proposed recommendation system. The method encodes the comb
 Run the scripts according to the sequence below to reproduce the result of this paper 
 
   **1. Feature Extraction**
-  This step builds raw graph-based and side information features. This code is original from this repo: https://github.com/hadoov/GHRS/blob/main/Features100K.py
+  This step builds raw graph-based and side information features. This code is original from this repo: https://github.com/hadoov/GHRS/blob/main/Features100K.py\
+  
   python Features100K.py
+  
   Output: x_train_alpha(<alpha>).pkl files in data100k/ (e.g., x_train_alpha(0.01).pkl)
 
   **2. Dimensionality Reduction with Autoencoder**
   This encodes high-dimensional features into low-dimensional vectors using an autoencoder.
+  
   python autoencoder.py
+  
   Input: x_train_alpha(0.01).pkl (modify the file path inside autoencoder.py if needed)
+  
   Output: encoded_features.pkl in data100k/
 
   **3. User Clustering (KMeans)**
   This clusters the encoded features to group similar users.
+  
   python cluster_user.py
+  
   Output:
+  
     kmeans_diagnostics.png
+    
     user_clusters.pkl
   
   **4. Preference-Based Ranking (Rating Estimation)**
   This predicts ratings based on cluster averages and item similarity.
+  
   python rank_model.py
+  
   Output: predicted_ratings.pkl
 
   **5. Evaluation (RMSE Calculation)**
   This evaluates the predicted ratings against ground truth test set.
+  
   python evaluate.py
+  
   Output: RMSE on test set: ... in console
 
 ## Data
