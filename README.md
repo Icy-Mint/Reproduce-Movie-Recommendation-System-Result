@@ -35,7 +35,7 @@ Run the scripts according to the sequence below to reproduce the result of this 
   **1. Feature Extraction**
   This step builds raw graph-based and side information features. This code is original from this repo: https://github.com/hadoov/GHRS/blob/main/Features100K.py\
   
-  python Features100K.py
+    python Features100K.py
   
   Output: 
   
@@ -44,7 +44,7 @@ Run the scripts according to the sequence below to reproduce the result of this 
   **2. Dimensionality Reduction with Autoencoder**
   This encodes high-dimensional features into low-dimensional vectors using an autoencoder.
   
-  python autoencoder.py
+    python autoencoder.py
   
   Input: x_train_alpha(0.01).pkl (modify the file path inside autoencoder.py if needed)
   
@@ -55,7 +55,7 @@ Run the scripts according to the sequence below to reproduce the result of this 
   **3. User Clustering (KMeans)**
   This clusters the encoded features to group similar users.
   
-  python cluster_user.py
+    python cluster_user.py
   
   Output:
   
@@ -66,7 +66,7 @@ Run the scripts according to the sequence below to reproduce the result of this 
   **4. Preference-Based Ranking (Rating Estimation)**
   This predicts ratings based on cluster averages and item similarity.
   
-  python rank_model.py
+    python rank_model.py
   
   Output: 
   
@@ -75,7 +75,7 @@ Run the scripts according to the sequence below to reproduce the result of this 
   **5. Evaluation (RMSE Calculation)**
   This evaluates the predicted ratings against ground truth test set.
   
-  python evaluate.py
+    python evaluate.py
   
   Output: 
     
