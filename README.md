@@ -1,6 +1,6 @@
 # GHRS: Graph-based hybrid recommendation system
 ## Notices
-The comments below are from the orginal repository excerpt the Scripts Added For Reproducing The Result(Including Instruction)
+The comments below are from the orginal repository excerpt **the Scripts Added For Reproducing The Result(Including Instruction)**
 
 [![PWC](https://img.shields.io/endpoint.svg?url=https://paperswithcode.com/badge/ghrs-graph-based-hybrid-recommendation-system/collaborative-filtering-on-movielens-100k)](https://paperswithcode.com/sota/collaborative-filtering-on-movielens-100k?p=ghrs-graph-based-hybrid-recommendation-system)
 [![PWC](https://img.shields.io/endpoint.svg?url=https://paperswithcode.com/badge/ghrs-graph-based-hybrid-recommendation-system/collaborative-filtering-on-movielens-1m)](https://paperswithcode.com/sota/collaborative-filtering-on-movielens-1m?p=ghrs-graph-based-hybrid-recommendation-system)
